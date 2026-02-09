@@ -4,34 +4,28 @@ from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ================= CONFIG =================
-API_ID = 38438389
-API_HASH = "327b2592682ff56d760110350e66425e"
-BOT_TOKEN = "8298490569:AAGOm3fAOhqBxmvwsB2lrF-mCmvqbG3D7Fo"
+# ===== CONFIG =====
+API_ID = int(os.environ.get("API_ID"))
+API_HASH = os.environ.get("API_HASH")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
-BIN_CHANNEL = -1003801817080
+BIN_CHANNEL = int(os.environ.get("BIN_CHANNEL"))
 AUTO_DELETE_TIME = 300
 
-# ================= BOT =================
-bot = Client(
-    "moviebot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
-)
+bot = Client("moviebot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# ================= WEB SERVER (Render free) =================
+# ===== WEB SERVER (Render free keep alive) =====
 app = Flask(__name__)
 
-@app.route('/')
+@app.route("/")
 def home():
-    return "Bot is alive"
+    return "Bot running"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# ================= AUTO DELETE =================
+# ===== AUTO DELETE =====
 def delete_later(chat_id, msg_id):
     def delete():
         try:
@@ -40,42 +34,41 @@ def delete_later(chat_id, msg_id):
             pass
     threading.Timer(AUTO_DELETE_TIME, delete).start()
 
-# ================= START =================
+# ===== START =====
 @bot.on_message(filters.command("start") & filters.private)
-async def start(client, message):
-    text = """
-👋 হ্যালো!
+async def start(_, message):
+    await message.reply_text(
+        "👋 হ্যালো!\n\n"
+        "গ্রুপে মুভির নাম লিখলেই রেজাল্ট দিব।\n"
+        "ফাইল ৫ মিনিট পর ডিলিট হবে।"
+    )
 
-🎬 আমি একটি অটো মুভি বট  
-গ্রুপে মুভির নাম লিখলেই রেজাল্ট দিব।
-
-⚠️ সতর্কতা:
-মুভি ফাইল ৫ মিনিট পর ডিলিট হবে (copyright issue)
-ডাউনলোড করতে হলে অন্য চ্যাটে forward করুন।
-"""
-    await message.reply_text(text)
-
-# ================= SEARCH =================
+# ===== SEARCH IN GROUP =====
 @bot.on_message(filters.text & filters.group)
-async def search(client, message):
+async def search(_, message):
     query = message.text.lower()
 
-    async for msg in bot.search_messages(BIN_CHANNEL, query, limit=5):
-        file_id = msg.document.file_id
+    async for msg in bot.get_chat_history(BIN_CHANNEL):
+        if msg.document and msg.caption:
+            if query in msg.caption.lower():
 
-        btn = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("📥 Download", callback_data=f"get_{file_id}")]]
-        )
+                file_id = msg.document.file_id
 
-        await message.reply_text(
-            f"🎬 Result for: {query}",
-            reply_markup=btn
-        )
-        break
+                btn = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("📥 Download", callback_data=f"get_{file_id}")]]
+                )
 
-# ================= BUTTON =================
+                await message.reply_text(
+                    f"🎬 {msg.caption}",
+                    reply_markup=btn
+                )
+                return
+
+    await message.reply_text("❌ কিছু পাওয়া যায়নি")
+
+# ===== BUTTON =====
 @bot.on_callback_query()
-async def cb(client, query):
+async def cb(_, query):
     data = query.data
 
     if data.startswith("get_"):
@@ -83,12 +76,12 @@ async def cb(client, query):
 
         sent = await query.message.reply_document(
             file_id,
-            caption="⚠️ ৫ মিনিট পর ফাইল ডিলিট হবে\nForward করে ডাউনলোড করুন"
+            caption="⚠️ ৫ মিনিট পর ডিলিট হবে\nForward করে ডাউনলোড করুন"
         )
 
         delete_later(sent.chat.id, sent.id)
 
-# ================= RUN =================
+# ===== RUN =====
 if __name__ == "__main__":
     threading.Thread(target=run_web).start()
     bot.run()
