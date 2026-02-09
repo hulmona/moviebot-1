@@ -1,89 +1,82 @@
 import os
-import logging
-import threading
+import asyncio
+from pyrogram import Client, filters
 from flask import Flask
 from threading import Thread
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from pymongo import MongoClient
-from bson import ObjectId
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-DATABASE_URI = os.getenv("DATABASE_URI")
-PORT = int(os.environ.get("PORT", 10000))
+# -------- ENV --------
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+BIN_CHANNEL = int(os.environ.get("BIN_CHANNEL"))
+AUTO_DELETE_TIME = int(os.environ.get("AUTO_DELETE_TIME", 300))
 
-logging.basicConfig(level=logging.INFO)
+API_ID = 123456
+API_HASH = "0123456789abcdef0123456789abcdef"
 
-mongo = MongoClient(DATABASE_URI)
-db = mongo["autofilter"]
-movies = db.movies
+# -------- BOT --------
+bot = Client(
+    "moviebot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN
+)
 
+# -------- START --------
+@bot.on_message(filters.command("start") & filters.private)
+async def start(client, message):
+    await message.reply_text(
+        "👋 Welcome!\nMovie name ba file link send korun."
+    )
+
+# -------- FILE SEND --------
+@bot.on_message(filters.private & filters.text)
+async def send_file(client, message):
+    txt = message.text
+
+    if txt.startswith("file_"):
+        try:
+            file_id = int(txt.split("file_")[1])
+
+            sent = await client.copy_message(
+                chat_id=message.chat.id,
+                from_chat_id=BIN_CHANNEL,
+                message_id=file_id
+            )
+
+            warn = await message.reply_text(
+                "⚠️ Copyright issue er jonno file 5 min por delete hobe.\nForward kore nin."
+            )
+
+            await asyncio.sleep(AUTO_DELETE_TIME)
+
+            try:
+                await sent.delete()
+                await warn.delete()
+            except:
+                pass
+
+        except:
+            await message.reply_text("File error")
+
+# -------- WEB SERVER --------
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Bot alive"
+    return "Bot running..."
 
 def run_web():
-    app.run(host="0.0.0.0", port=PORT)
+    app.run(host="0.0.0.0", port=10000)
 
-def delete_later(bot, chat_id, msg_id, delay=300):
-    def delete():
-        try:
-            bot.delete_message(chat_id, msg_id)
-        except:
-            pass
-    threading.Timer(delay, delete).start()
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
 
-def start(update, context):
-    update.message.reply_text(
-        "👋 হ্যালো!\n\nমুভির নাম লিখুন।\nফাইল ৫ মিনিট পর ডিলিট হবে (কপিরাইট ইস্যু)"
-    )
-
-def search(update, context):
-    query = update.message.text
-    chat_id = update.message.chat_id
-
-    results = list(movies.find({"$text": {"$search": query}}).limit(10))
-
-    if not results:
-        update.message.reply_text("মুভি পাওয়া যায়নি")
-        return
-
-    btn = []
-    for m in results:
-        btn.append([InlineKeyboardButton(m["title"], callback_data=str(m["_id"]))])
-
-    update.message.reply_text(
-        "রেজাল্ট:",
-        reply_markup=InlineKeyboardMarkup(btn)
-    )
-
-def callback(update, context):
-    q = update.callback_query
-    q.answer()
-
-    movie = movies.find_one({"_id": ObjectId(q.data)})
-
-    msg = context.bot.send_document(
-        chat_id=q.message.chat_id,
-        document=movie["file_id"],
-        caption="⚠️ ৫ মিনিট পর ফাইল ডিলিট হবে"
-    )
-
-    delete_later(context.bot, q.message.chat_id, msg.message_id)
-
-def run_bot():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, search))
-    dp.add_handler(CallbackQueryHandler(callback))
-
-    updater.start_polling()
-    updater.idle()
+# -------- MAIN --------
+async def main():
+    await bot.start()
+    print("Bot started")
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    Thread(target=run_bot).start()
-    run_web()
+    keep_alive()
+    asyncio.run(main())
