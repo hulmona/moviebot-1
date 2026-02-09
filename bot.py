@@ -2,18 +2,19 @@ import os
 import logging
 from flask import Flask
 from threading import Thread
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from pymongo import MongoClient
 from bson import ObjectId
 import threading
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URI = os.getenv("DATABASE_URI")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "autofilter")
+DATABASE_NAME = "autofilter"
 PORT = int(os.environ.get("PORT", 10000))
-AUTO_DELETE_TIME = int(os.getenv("AUTO_DELETE_TIME", 300))
-MAX_BTN = int(os.getenv("MAX_BTN", 10))
+
+AUTO_DELETE_TIME = 300
+MAX_BTN = 10
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,7 +26,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Bot running"
+    return "Bot alive"
 
 def run_web():
     app.run(host="0.0.0.0", port=PORT)
@@ -57,19 +58,17 @@ def search(update, context):
     query = update.message.text
     chat_id = update.message.chat_id
 
-    results = list(movies.find(
-        {"$text": {"$search": query}}
-    ).limit(MAX_BTN))
+    results = list(movies.find({"$text": {"$search": query}}).limit(MAX_BTN))
 
     if not results:
-        update.message.reply_text("❌ মুভি পাওয়া যায়নি")
+        update.message.reply_text("মুভি পাওয়া যায়নি")
         return
 
     buttons = []
     for m in results:
         buttons.append([
             InlineKeyboardButton(
-                m.get("title","movie"),
+                m.get("title", "movie"),
                 callback_data=f"m_{m['_id']}"
             )
         ])
